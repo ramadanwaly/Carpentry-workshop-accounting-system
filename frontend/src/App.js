@@ -11,23 +11,65 @@ import WithdrawalsPage from './pages/WithdrawalsPage';
 import WithdrawalsReportsPage from './pages/WithdrawalsReportsPage';
 import IncomesPage from './pages/IncomesPage';
 import FinancialReportsPage from './pages/FinancialReportsPage';
+import ProtectedRoute from './components/ProtectedRoute';
 // يمكنك إضافة صفحات أخرى لاحقًا
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/sales" element={<SalesPage />} />
-        <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/expenses" element={<ExpensesPage />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/withdrawals" element={<WithdrawalsPage />} />
-        <Route path="/withdrawals-reports" element={<WithdrawalsReportsPage />} />
-        <Route path="/incomes" element={<IncomesPage />} />
-        <Route path="/financial-reports" element={<FinancialReportsPage />} />
+        <Route path="/home" element={
+          <ProtectedRoute>
+            <HomePage />
+          </ProtectedRoute>
+        } />
+        <Route path="/sales" element={
+          <ProtectedRoute>
+            <SalesPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/customers" element={
+          <ProtectedRoute>
+            <CustomersPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/expenses" element={
+          <ProtectedRoute>
+            <ExpensesPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/inventory" element={
+          <ProtectedRoute>
+            <InventoryPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/settings" element={
+          <ProtectedRoute>
+            <SettingsPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/withdrawals" element={
+          <ProtectedRoute>
+            <WithdrawalsPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/withdrawals-reports" element={
+          <ProtectedRoute>
+            <WithdrawalsReportsPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/incomes" element={
+          <ProtectedRoute>
+            <IncomesPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/financial-reports" element={
+          <ProtectedRoute>
+            <FinancialReportsPage />
+          </ProtectedRoute>
+        } />
         {/* صفحات أخرى مثل العملاء يمكن إضافتها هنا */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
