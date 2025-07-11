@@ -187,6 +187,33 @@ app.get('/api/sales', (req, res) => {
   });
 });
 
+// تعديل عملية بيع
+app.put('/api/sales/:id', (req, res) => {
+  const { id } = req.params;
+  const { customer_id, order_type, date, amount_paid } = req.body;
+  if (!customer_id || !order_type || !date || !amount_paid) {
+    return res.status(400).json({ message: 'يرجى إدخال جميع البيانات المطلوبة.' });
+  }
+  const sql = `UPDATE sales SET customer_id = ?, order_type = ?, date = ?, amount_paid = ? WHERE id = ?`;
+  db.run(sql, [customer_id, order_type, date, amount_paid, id], function(err) {
+    if (err) {
+      return res.status(500).json({ message: 'حدث خطأ أثناء تعديل البيع.' });
+    }
+    res.json({ message: 'تم تعديل البيع بنجاح.' });
+  });
+});
+
+// حذف عملية بيع
+app.delete('/api/sales/:id', (req, res) => {
+  const { id } = req.params;
+  db.run('DELETE FROM sales WHERE id = ?', [id], function(err) {
+    if (err) {
+      return res.status(500).json({ message: 'حدث خطأ أثناء حذف البيع.' });
+    }
+    res.json({ message: 'تم حذف البيع بنجاح.' });
+  });
+});
+
 // إضافة عميل جديد
 app.post('/api/customers', (req, res) => {
   const { name, phone } = req.body;
@@ -535,33 +562,33 @@ app.get('/api/reports/expenses', (req, res) => {
 });
 
 // تقرير صافي الربح حسب الفترة
-app.get('/api/reports/profit', (req, res) => {
+app.get('/api/reports/profit', authenticateToken, (req, res) => {
   const { from, to } = req.query;
-  let salesSql = `SELECT SUM(amount_paid) AS total_sales FROM sales WHERE 1=1`;
+  let incomesSql = `SELECT SUM(amount) AS total_incomes FROM incomes WHERE 1=1`;
   let expensesSql = `SELECT SUM(amount) AS total_expenses FROM expenses WHERE 1=1`;
   const params = [];
   if (from) {
-    salesSql += ' AND date >= ?';
+    incomesSql += ' AND date >= ?';
     expensesSql += ' AND date >= ?';
     params.push(from);
   }
   if (to) {
-    salesSql += ' AND date <= ?';
+    incomesSql += ' AND date <= ?';
     expensesSql += ' AND date <= ?';
     params.push(to);
   }
-  db.get(salesSql, params, (err, salesRow) => {
+  db.get(incomesSql, params, (err, incomesRow) => {
     if (err) {
-      return res.status(500).json({ message: 'حدث خطأ أثناء جلب المبيعات.' });
+      return res.status(500).json({ message: 'حدث خطأ أثناء جلب الإيرادات.' });
     }
     db.get(expensesSql, params, (err2, expensesRow) => {
       if (err2) {
         return res.status(500).json({ message: 'حدث خطأ أثناء جلب المصروفات.' });
       }
-      const total_sales = salesRow.total_sales || 0;
+      const total_incomes = incomesRow.total_incomes || 0;
       const total_expenses = expensesRow.total_expenses || 0;
-      const net_profit = total_sales - total_expenses;
-      res.json({ total_sales, total_expenses, net_profit });
+      const net_profit = total_incomes - total_expenses;
+      res.json({ total_incomes, total_expenses, net_profit });
     });
   });
 });
@@ -811,6 +838,67 @@ app.get('/api/inventory/withdrawals', authenticateToken, (req, res) => {
   });
 });
 
+// تعديل عملية سحب من المخزون
+app.put('/api/inventory/withdrawals/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { customer_id, material_id, quantity, date, note } = req.body;
+  if (!customer_id || !material_id || !quantity || !date) {
+    return res.status(400).json({ message: 'يرجى إدخال جميع البيانات المطلوبة.' });
+  }
+  
+  // أولاً نحصل على الكمية القديمة
+  db.get('SELECT quantity FROM inventory_withdrawals WHERE id = ?', [id], (err, oldWithdrawal) => {
+    if (err || !oldWithdrawal) {
+      return res.status(404).json({ message: 'عملية السحب غير موجودة.' });
+    }
+    
+    const quantityDifference = Number(quantity) - Number(oldWithdrawal.quantity);
+    
+    // تحديث المخزون بناءً على الفرق
+    db.run('UPDATE inventory SET quantity = quantity - ? WHERE id = ?', [quantityDifference, material_id], function(err2) {
+      if (err2) {
+        return res.status(500).json({ message: 'حدث خطأ أثناء تحديث المخزون.' });
+      }
+      
+      // تحديث عملية السحب
+      db.run('UPDATE inventory_withdrawals SET customer_id = ?, material_id = ?, quantity = ?, date = ?, note = ? WHERE id = ?', 
+        [customer_id, material_id, quantity, date, note || null, id], function(err3) {
+        if (err3) {
+          return res.status(500).json({ message: 'حدث خطأ أثناء تعديل السحب.' });
+        }
+        res.json({ message: 'تم تعديل السحب بنجاح.' });
+      });
+    });
+  });
+});
+
+// حذف عملية سحب من المخزون
+app.delete('/api/inventory/withdrawals/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  
+  // أولاً نحصل على تفاصيل السحب
+  db.get('SELECT material_id, quantity FROM inventory_withdrawals WHERE id = ?', [id], (err, withdrawal) => {
+    if (err || !withdrawal) {
+      return res.status(404).json({ message: 'عملية السحب غير موجودة.' });
+    }
+    
+    // إعادة الكمية إلى المخزون
+    db.run('UPDATE inventory SET quantity = quantity + ? WHERE id = ?', [withdrawal.quantity, withdrawal.material_id], function(err2) {
+      if (err2) {
+        return res.status(500).json({ message: 'حدث خطأ أثناء تحديث المخزون.' });
+      }
+      
+      // حذف عملية السحب
+      db.run('DELETE FROM inventory_withdrawals WHERE id = ?', [id], function(err3) {
+        if (err3) {
+          return res.status(500).json({ message: 'حدث خطأ أثناء حذف السحب.' });
+        }
+        res.json({ message: 'تم حذف السحب بنجاح.' });
+      });
+    });
+  });
+});
+
 // تقارير السحوبات المتقدمة
 // 1. تقرير شامل بفلاتر (تاريخ، عميل، مادة)
 app.get('/api/reports/withdrawals', authenticateToken, (req, res) => {
@@ -877,28 +965,61 @@ app.get('/api/reports/withdrawals/material-balance', authenticateToken, (req, re
 
 // 3. تقرير إجمالي السحوبات لكل عميل أو مادة
 app.get('/api/reports/withdrawals/summary', authenticateToken, (req, res) => {
-  const { by } = req.query; // by = 'customer' أو 'material'
+  const { by, from, to } = req.query; // by = 'customer' أو 'material'
+  
+  // إذا لم يتم تحديد by، نعيد إجمالي السحوبات فقط
+  if (!by) {
+    let sql = `SELECT SUM(quantity) AS total_withdrawals FROM inventory_withdrawals WHERE 1=1`;
+    const params = [];
+    if (from) { sql += ' AND date >= ?'; params.push(from); }
+    if (to)   { sql += ' AND date <= ?'; params.push(to); }
+    db.get(sql, params, (err, row) => {
+      if (err) return res.status(500).json({ message: 'خطأ في جلب سحوبات المخزون.' });
+      res.json({ total_withdrawals: row.total_withdrawals || 0 });
+    });
+    return;
+  }
+  
+  // إذا تم تحديد by، نعيد البيانات المجمعة
   let sql = '';
+  let params = [];
+  
   if (by === 'customer') {
     sql = `
       SELECT c.id AS customer_id, c.name AS customer_name, SUM(w.quantity) AS total_withdrawn
       FROM inventory_withdrawals w
       LEFT JOIN customers c ON w.customer_id = c.id
-      GROUP BY w.customer_id
-      ORDER BY total_withdrawn DESC
+      WHERE 1=1
     `;
   } else if (by === 'material') {
     sql = `
       SELECT i.id AS material_id, i.material_name, SUM(w.quantity) AS total_withdrawn
       FROM inventory_withdrawals w
       LEFT JOIN inventory i ON w.material_id = i.id
-      GROUP BY w.material_id
-      ORDER BY total_withdrawn DESC
+      WHERE 1=1
     `;
   } else {
     return res.status(400).json({ message: 'يرجى تحديد نوع التجميع (by=customer أو by=material).' });
   }
-  db.all(sql, [], (err, rows) => {
+  
+  // إضافة فلاتر التاريخ إذا وجدت
+  if (from) {
+    sql += ' AND w.date >= ?';
+    params.push(from);
+  }
+  if (to) {
+    sql += ' AND w.date <= ?';
+    params.push(to);
+  }
+  
+  // إضافة GROUP BY و ORDER BY
+  if (by === 'customer') {
+    sql += ' GROUP BY w.customer_id ORDER BY total_withdrawn DESC';
+  } else {
+    sql += ' GROUP BY w.material_id ORDER BY total_withdrawn DESC';
+  }
+  
+  db.all(sql, params, (err, rows) => {
     if (err) {
       return res.status(500).json({ message: 'حدث خطأ أثناء جلب ملخص السحوبات.' });
     }
@@ -937,6 +1058,33 @@ app.get('/api/incomes', authenticateToken, (req, res) => {
   });
 });
 
+// تعديل إيراد
+app.put('/api/incomes/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { amount, source_type, customer_id, date, payment_method, receipt_number, note } = req.body;
+  if (!amount || !source_type || !date) {
+    return res.status(400).json({ message: 'يرجى إدخال جميع البيانات الأساسية.' });
+  }
+  const sql = `UPDATE incomes SET amount = ?, source_type = ?, customer_id = ?, date = ?, payment_method = ?, receipt_number = ?, note = ? WHERE id = ?`;
+  db.run(sql, [amount, source_type, customer_id || null, date, payment_method || null, receipt_number || null, note || null, id], function(err) {
+    if (err) {
+      return res.status(500).json({ message: 'حدث خطأ أثناء تعديل الإيراد.' });
+    }
+    res.json({ message: 'تم تعديل الإيراد بنجاح.' });
+  });
+});
+
+// حذف إيراد
+app.delete('/api/incomes/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  db.run('DELETE FROM incomes WHERE id = ?', [id], function(err) {
+    if (err) {
+      return res.status(500).json({ message: 'حدث خطأ أثناء حذف الإيراد.' });
+    }
+    res.json({ message: 'تم حذف الإيراد بنجاح.' });
+  });
+});
+
 // تقارير مالية مفصلة
 // 1. تقرير الإيرادات مع تجميع حسب المصدر
 app.get('/api/reports/incomes', authenticateToken, (req, res) => {
@@ -967,25 +1115,7 @@ app.get('/api/reports/expenses', authenticateToken, (req, res) => {
     res.json({ total_expenses: row.total_expenses || 0 });
   });
 });
-// 3. تقرير صافي الربح (إيرادات - مصروفات)
-app.get('/api/reports/profit', authenticateToken, (req, res) => {
-  const { from, to } = req.query;
-  let incomesSql = `SELECT SUM(amount) AS total_incomes FROM incomes WHERE 1=1`;
-  let expensesSql = `SELECT SUM(amount) AS total_expenses FROM expenses WHERE 1=1`;
-  const params = [];
-  if (from) { incomesSql += ' AND date >= ?'; expensesSql += ' AND date >= ?'; params.push(from); }
-  if (to)   { incomesSql += ' AND date <= ?'; expensesSql += ' AND date <= ?'; params.push(to); }
-  db.get(incomesSql, params, (err, incomesRow) => {
-    if (err) return res.status(500).json({ message: 'خطأ في جلب الإيرادات.' });
-    db.get(expensesSql, params, (err2, expensesRow) => {
-      if (err2) return res.status(500).json({ message: 'خطأ في جلب المصروفات.' });
-      const total_incomes = incomesRow.total_incomes || 0;
-      const total_expenses = expensesRow.total_expenses || 0;
-      const net_profit = total_incomes - total_expenses;
-      res.json({ total_incomes, total_expenses, net_profit });
-    });
-  });
-});
+// 3. تقرير صافي الربح (إيرادات - مصروفات) - تم دمجها مع endpoint أعلاه
 // 4. تقرير المبيعات
 app.get('/api/reports/sales', authenticateToken, (req, res) => {
   const { from, to } = req.query;
@@ -998,18 +1128,7 @@ app.get('/api/reports/sales', authenticateToken, (req, res) => {
     res.json({ total_sales: row.total_sales || 0 });
   });
 });
-// 5. تقرير سحوبات المخزون
-app.get('/api/reports/withdrawals/summary', authenticateToken, (req, res) => {
-  const { from, to } = req.query;
-  let sql = `SELECT SUM(quantity) AS total_withdrawals FROM inventory_withdrawals WHERE 1=1`;
-  const params = [];
-  if (from) { sql += ' AND date >= ?'; params.push(from); }
-  if (to)   { sql += ' AND date <= ?'; params.push(to); }
-  db.get(sql, params, (err, row) => {
-    if (err) return res.status(500).json({ message: 'خطأ في جلب سحوبات المخزون.' });
-    res.json({ total_withdrawals: row.total_withdrawals || 0 });
-  });
-});
+// 5. تقرير سحوبات المخزون (تم دمجها مع endpoint أعلاه)
 
 // Endpoints بيانات مجمعة زمنيًا (للرسوم البيانية)
 // 1. إيرادات مجمعة

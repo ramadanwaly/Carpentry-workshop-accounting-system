@@ -27,6 +27,13 @@ function SalesPage() {
   const [searchOrderType, setSearchOrderType] = useState('');
   const [searchDate, setSearchDate] = useState('');
 
+  // حالات التعديل
+  const [editId, setEditId] = useState(null);
+  const [editCustomerId, setEditCustomerId] = useState('');
+  const [editOrderType, setEditOrderType] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editAmountPaid, setEditAmountPaid] = useState('');
+
   useEffect(() => {
     fetchSales();
     fetchCustomers();
@@ -88,6 +95,63 @@ function SalesPage() {
       setAddError(err.response?.data?.message || 'فشل في إضافة البيع');
     }
     setAdding(false);
+  };
+
+  // بدء التعديل
+  const startEdit = (sale) => {
+    setEditId(sale.id);
+    setEditCustomerId(sale.customer_id);
+    setEditOrderType(sale.order_type);
+    setEditDate(sale.date);
+    setEditAmountPaid(sale.amount_paid);
+  };
+
+  // إلغاء التعديل
+  const cancelEdit = () => {
+    setEditId(null);
+    setEditCustomerId('');
+    setEditOrderType('');
+    setEditDate('');
+    setEditAmountPaid('');
+  };
+
+  // حفظ التعديل
+  const handleEditSave = async (id) => {
+    if (!editCustomerId || !editOrderType || !editDate || !editAmountPaid) {
+      alert('يرجى إدخال جميع البيانات');
+      return;
+    }
+    if (isNaN(editAmountPaid) || Number(editAmountPaid) <= 0) {
+      alert('المبلغ يجب أن يكون رقمًا أكبر من صفر');
+      return;
+    }
+    try {
+      await axios.put(`http://localhost:3001/api/sales/${id}`, {
+        customer_id: editCustomerId,
+        order_type: editOrderType,
+        date: editDate,
+        amount_paid: editAmountPaid
+      }, {
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+      });
+      cancelEdit();
+      fetchSales();
+    } catch (err) {
+      alert('فشل في تعديل البيع');
+    }
+  };
+
+  // حذف عملية بيع
+  const handleDelete = async (id) => {
+    if (!window.confirm('هل أنت متأكد أنك تريد حذف هذه العملية؟')) return;
+    try {
+      await axios.delete(`http://localhost:3001/api/sales/${id}`, {
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+      });
+      fetchSales();
+    } catch (err) {
+      alert('فشل في حذف العملية');
+    }
   };
 
   // تصفية المبيعات حسب البحث
@@ -225,15 +289,41 @@ function SalesPage() {
               <th>نوع الطلب</th>
               <th>التاريخ</th>
               <th>المبلغ المدفوع</th>
+              <th>إجراءات</th>
             </tr>
           </thead>
           <tbody>
             {filteredSales.map(sale => (
               <tr key={sale.id}>
-                <td>{sale.customer_name || '-'}</td>
-                <td>{sale.order_type}</td>
-                <td>{sale.date}</td>
-                <td>{sale.amount_paid}</td>
+                {editId === sale.id ? (
+                  <>
+                    <td>
+                      <select value={editCustomerId} onChange={e => setEditCustomerId(e.target.value)} style={inputStyle}>
+                        {customers.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td><input type="text" value={editOrderType} onChange={e => setEditOrderType(e.target.value)} style={inputStyle} /></td>
+                    <td><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} style={inputStyle} /></td>
+                    <td><input type="number" value={editAmountPaid} onChange={e => setEditAmountPaid(e.target.value)} style={inputStyle} /></td>
+                    <td>
+                      <button onClick={() => handleEditSave(sale.id)} style={saveBtnStyle}>حفظ</button>
+                      <button onClick={cancelEdit} style={cancelBtnStyle}>إلغاء</button>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td>{sale.customer_name || '-'}</td>
+                    <td>{sale.order_type}</td>
+                    <td>{sale.date}</td>
+                    <td>{sale.amount_paid}</td>
+                    <td>
+                      <button onClick={() => startEdit(sale)} style={editBtnStyle}>تعديل</button>
+                      <button onClick={() => handleDelete(sale.id)} style={deleteBtnStyle}>حذف</button>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
